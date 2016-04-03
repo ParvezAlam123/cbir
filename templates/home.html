@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+  <!-- Main component -->
+  <div class="jumbotron">
+
+    <form method="POST" action="{% url 'upload' %}" class="dropzone" id="myDropzone" enctype="multipart/form-data">
+
+      {% csrf_token %}
+
+    </form>
+
+    <div class="results">
+      <p>To perform a reverse image search click the dropzone to bring up your file browser or simply drag and drop the file within the dashed area.</p>
+    </div>
+
+  </div>
+
+{% endblock content %}
