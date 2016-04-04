@@ -1,2 +1,7 @@
+;;extensions to ignore
+*.log
+*.pot
+*.pyc
+
 .idea/workspace.xml
 **/.idea/workspace.xml
