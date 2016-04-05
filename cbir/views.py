@@ -183,6 +183,19 @@ def splitImage(image):
     return masks
 
 
+def reload(request):
+    arr = []
+
+    for instance in Image.objects.all():
+        img = cv2.imread(instance.file.path)
+        gimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        instance.texture = texture_extractor(gimg).tostring()
+        instance.save()
+        arr.append(str(instance.file) + ' :: reprocessed<br>')
+
+    return HttpResponse(arr)
+
+
 # trains a classifier and saves it in binary to the db
 def train():
     lbp = LocalBinaryPatterns(24, 8)

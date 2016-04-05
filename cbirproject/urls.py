@@ -21,6 +21,7 @@ from django.contrib import admin
 urlpatterns = [
     url(r'^$', 'cbir.views.home', name='home'),
     url(r'^success/', 'cbir.views.upload_image', name='upload'),
+    url(r'^reload/', 'cbir.views.reload', name='reload'),
 
     url(r'^admin/', admin.site.urls),
 ]
