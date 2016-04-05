@@ -80,8 +80,8 @@
       function showResults(response) {
         var content = '';
         for (var i = 0, l = response.length; i < l; i++) {
-          content += '<div class="col-md-4">';
-          content += '<img class="img-responsive animated fadeInDown" src="media/' + response[i][1] + '">';
+          content += '<div class="col-md-3">';
+          content += '<img class="img-responsive center-block animated fadeInDown" src="media/' + response[i][1] + '">';
           content += '<p>' + response[i][0] + '</p>';
           content += '</div>';
         }
