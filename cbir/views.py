@@ -99,26 +99,13 @@ def searcher(pic):
     # prediction = model.predict(pattern)[0]
     # print(prediction)
 
-    return dict_sorted[:3]
-
-
-def calcGLCM(image):
-    fdiss = []
-    fcorr = []
-
-    for mask in splitImage(image):
-        glcm = greycomatrix(mask, [5], [0], 256, symmetric=True, normed=True)
-        fdiss.append(greycoprops(glcm, 'dissimilarity')[0, 0])
-        fcorr.append(greycoprops(glcm, 'correlation')[0, 0])
-
-    features = {'fdiss': fdiss, 'fcorr': fcorr}
-
-    return features
+    return dict_sorted[:8]
 
 
 # create normalize and flatten a color histogram
 def clrHistogram(image, mask, bins):
     hist = cv2.calcHist([image], [0, 1, 2], mask, bins, [0, 256, 0, 256, 0, 256])
+    # TODO: does this need to be collapsed into one dimension? cv2.NormalizeHist(hist, 1)
     hist = cv2.normalize(hist, hist).flatten()
 
     return hist
