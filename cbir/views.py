@@ -8,6 +8,7 @@ from django.http import HttpResponse
 from django.http import HttpResponseBadRequest
 from django.conf import settings
 from sklearn.svm import LinearSVC
+from sklearn.preprocessing import normalize
 from skimage.feature import greycomatrix, greycoprops
 from cbir.cvclasses.localbinarypatterns import LocalBinaryPatterns
 
@@ -35,11 +36,9 @@ def upload_image(request):
     if form.is_valid():
         pic = Image(file=request.FILES['file'])
 
-        # train()
-
         pic.save()              # save image first so we can retrieve the file path
 
-        data = process_image(pic)      # process the image; generate histograms etc
+        data = process_image(pic)      # process the image; extract features
 
         return HttpResponse(json.dumps(data), content_type="application/json")
 
@@ -48,48 +47,68 @@ def upload_image(request):
 
 # extract features from query image
 def process_image(pic):
+    img = cv2.imread(pic.file.path)
+
+    bgrHist = clrHistogram(img, None, [8, 8, 8])
+
+    # extract features & save to db
+    pic.bgrHist = bgrHist.tostring()
+    pic.hsvHist = colour_extractor(img).tostring()
+
+    gimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    pic.texture = texture_extractor(gimg).tostring()
 
     lbp = LocalBinaryPatterns(24, 8)
-    clgfeatures = []
+    pic.lbpHist = lbp.describe(gimg).tostring()
 
-    img = cv2.imread(pic.file.path)
-    hsvimg = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    # extract a 3D RGB & HSV color histogram from the image using 8 bins per channel
-    pic.bgrHist = clrHistogram(img, None, [8, 8, 8])
-
-    for mask in splitImage(hsvimg):
-        clgfeatures.extend(clrHistogram(hsvimg, mask, [18, 3, 3]))
-
-    glcmfeatures = calcGLCM(grey)
-
-    pic.lbpHist = lbp.describe(grey).tostring()
-    pic.hsvHist = clgfeatures  # note that some data/precision is lost in the conversion float > string > float
-    pic.dissimilarity = json.dumps(glcmfeatures['fdiss'])
-    pic.correlation = json.dumps(glcmfeatures['fcorr'])
     pic.save()
 
-    return searcher(pic)
+    return searcher(Image.objects.get(file=pic.file))
+
+
+def colour_extractor(image):
+    features = []
+
+    hsvimg = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    for mask in splitImage(hsvimg):
+        features.extend(clrHistogram(hsvimg, mask, [18, 3, 3]))
+
+    return np.array(features)
+
+
+def texture_extractor(image):
+    glcm = greycomatrix(image, [5], [0, 90, 45, 135], 256, symmetric=True, normed=True)
+    con = greycoprops(glcm, 'contrast')
+    cor = greycoprops(glcm, 'correlation')
+    asm = greycoprops(glcm, 'ASM')
+
+    a = np.vstack((con, cor))
+    b = np.vstack((a, asm))
+
+    # normalize(b, norm='l2', axis=1)
+    cv2.normalize(b, b, 0, 1, norm_type=cv2.NORM_MINMAX)
+
+    # for (x, y), value in np.ndenumerate(b):
+    #     b[x, y] = (value - np.mean(b[:,y]))/np.std(b[:,y])
+
+    return b.flatten()
 
 
 # search bgrHist field and return 3 best matches
-def searcher(pic):
+def searcher(query):
     # construct dictionary of image path : distance
     matches = {}
-    query = Image.objects.get(file=pic.file)
     w = [0.4, 0.6]
 
     for instance in Image.objects.all():
-        if str(instance) != str(pic.file) and (instance.hsvHist and instance.dissimilarity and instance.correlation) is not None:
-            texture1 = json.loads(query.dissimilarity) + json.loads(query.correlation)
-            texture2 = json.loads(instance.dissimilarity) + json.loads(instance.correlation)
-            x = [
-                chi2_distance(toMatrix(query.hsvHist), toMatrix(instance.hsvHist)),
-                chi2_distance(texture1, texture2)
-            ]
+        if str(instance) != str(query.file) and (instance.hsvHist and instance.texture) is not None:
+            matches[str(instance)] = chi2_distance(np.fromstring(query.texture), np.fromstring(instance.texture))
+            # if the rgb values are the same (with a minuscule tolerance) then remove the query image to avoid duplicate
+            if np.allclose(np.fromstring(query.bgrHist), np.fromstring(instance.bgrHist)):
+                Image.objects.filter(id=query.id).delete()
+                os.remove(query.file.path)
 
-            matches[str(instance)] = np.dot(w, x)
+            # matches[str(instance)] = np.dot(w, x)
 
     dict_sorted = sorted([(v, k) for (k, v) in matches.items()])
 
