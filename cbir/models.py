@@ -1,3 +1,4 @@
+import os
 from django.db import models
 
 
@@ -13,6 +14,13 @@ class Image(models.Model):
 
     def __str__(self):
         return str(self.file)
+
+    def delete(self, *args, **kwargs):
+        # delete Image file before calling real delete method
+        if os.path.isfile(self.file.path):
+            os.remove(self.file.path)
+
+        return super(Image, self).delete(*args, **kwargs)
 
 
 # table to hold training set for machine learning algorithms
