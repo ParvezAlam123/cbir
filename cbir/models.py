@@ -1,5 +1,6 @@
-import os
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 
 
 # Create your models here.
@@ -15,12 +16,13 @@ class Image(models.Model):
     def __str__(self):
         return str(self.file)
 
-    def delete(self, *args, **kwargs):
-        # delete Image file before calling real delete method
-        if os.path.isfile(self.file.path):
-            os.remove(self.file.path)
 
-        return super(Image, self).delete(*args, **kwargs)
+# delete associated image file when image model is removed
+@receiver(post_delete, sender=Image)
+def image_post_delete_handler(sender, **kwargs):
+    image = kwargs['instance']
+    storage, path = image.file.storage, image.file.path
+    storage.delete(path)
 
 
 # table to hold training set for machine learning algorithms
