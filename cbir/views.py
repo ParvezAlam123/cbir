@@ -11,6 +11,7 @@ from sklearn.svm import LinearSVC
 from sklearn.preprocessing import normalize
 from skimage.feature import greycomatrix, greycoprops
 from cbir.cvclasses.localbinarypatterns import LocalBinaryPatterns
+from cbir.cvclasses.searcher import Searcher
 
 from .forms import ImageForm
 from .models import Image
@@ -95,26 +96,16 @@ def texture_extractor(image):
 
 
 # search bgrHist field and return 3 best matches
-def searcher(query):
+def get_results(query):
     # construct dictionary of image path : distance
-    matches = {}
-    w = [0.4, 0.6]
-
-    for instance in Image.objects.all():
-        if str(instance) != str(query.file) and (instance.hsvHist and instance.texture) is not None:
-            matches[str(instance)] = chi2_distance(np.fromstring(query.texture), np.fromstring(instance.texture))
-            # if the rgb values are the same (with a minuscule tolerance) then remove the query image to avoid duplicate
-            if np.allclose(np.fromstring(query.bgrHist), np.fromstring(instance.bgrHist)):
-                Image.objects.filter(id=query.id).delete()
-                os.remove(query.file.path)
-
-            # matches[str(instance)] = np.dot(w, x)
+    s = Searcher(query, [0.4, 0.6])
+    matches = s.colour()
 
     dict_sorted = sorted([(v, k) for (k, v) in matches.items()])
 
     # svm = Classifier.objects.get(id=1).model
     # model = pickle.loads(svm)
-    # pattern = np.fromstring(query.lbpHist)
+    # pattern = np.fromstring(query.lbpHist, dtype=np.float32)
     # prediction = model.predict(pattern)[0]
     # print(prediction)
 
