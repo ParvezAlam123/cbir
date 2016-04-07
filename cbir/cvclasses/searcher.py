@@ -18,8 +18,8 @@ class Searcher:
         for instance in Image.objects.all():
             if str(instance) != str(self.q.file) and instance.hsvHist is not None:
                 matches[str(instance)] \
-                    = self.chi2_distance(np.fromstring(self.q.hsvHist, dtype=np.float32),
-                                         np.fromstring(instance.hsvHist, dtype=np.float32))
+                    = self.chi2_distance(np.fromstring(self.q.hsvHist, dtype=np.float64),
+                                         np.fromstring(instance.hsvHist, dtype=np.float64))
                 self.check_duplicate(self.q, instance)
         return matches
 
