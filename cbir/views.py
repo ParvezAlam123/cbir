@@ -56,9 +56,9 @@ def process_image(pic):
     pic.bgrHist = bgrHist.tostring()
     pic.hsvHist = colour_extractor(img).tostring()
 
-    gimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    pic.texture = texture_extractor(gimg).tostring()
+    pic.texture = texture_extractor(img).tostring()
 
+    gimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     lbp = LocalBinaryPatterns(24, 8)
     pic.lbpHist = lbp.describe(gimg).tostring()
 
@@ -78,28 +78,23 @@ def colour_extractor(image):
 
 
 def texture_extractor(image):
-    glcm = greycomatrix(image, [5], [0, 90, 45, 135], 256, symmetric=True, normed=True)
-    con = greycoprops(glcm, 'contrast')
-    cor = greycoprops(glcm, 'correlation')
-    asm = greycoprops(glcm, 'ASM')
+    props = ['dissimilarity', 'correlation', 'ASM']
+    features = []
+    gimg = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    glcm = greycomatrix(gimg, [5], [0, 90, 45, 135], 256, symmetric=True, normed=True)
+    for p in props:
+        features.append(greycoprops(glcm, p).flatten())
 
-    a = np.vstack((con, cor))
-    b = np.vstack((a, asm))
+    features = np.array(features)
 
-    # normalize(b, norm='l2', axis=1)
-    cv2.normalize(b, b, 0, 1, norm_type=cv2.NORM_MINMAX)
-
-    # for (x, y), value in np.ndenumerate(b):
-    #     b[x, y] = (value - np.mean(b[:,y]))/np.std(b[:,y])
-
-    return b.flatten()
+    return features.flatten()
 
 
 # search bgrHist field and return 3 best matches
 def get_results(query):
     # construct dictionary of image path : distance
     s = Searcher(query, [0.4, 0.6])
-    matches = s.colour()
+    matches = s.texture()
 
     dict_sorted = sorted([(v, k) for (k, v) in matches.items()])
 

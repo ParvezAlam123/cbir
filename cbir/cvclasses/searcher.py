@@ -28,8 +28,8 @@ class Searcher:
         for instance in Image.objects.all():
             if str(instance) != str(self.q.file) and instance.texture is not None:
                 matches[str(instance)] \
-                    = self.euclidean_distance(np.fromstring(self.q.texture, dtype=np.float32),
-                                              np.fromstring(instance.texture, dtype=np.float32))
+                    = self.chi2_distance(np.fromstring(self.q.texture, dtype=np.float64),
+                                         np.fromstring(instance.texture, dtype=np.float64))
                 self.check_duplicate(self.q, instance)
 
         return matches
@@ -39,8 +39,8 @@ class Searcher:
         for instance in Image.objects.all():
             if str(instance) != str(self.q.file) and instance.lbpHist is not None:
                 matches[str(instance)] \
-                    = self.euclidean_distance(np.fromstring(self.q.lbpHist, dtype=np.float32),
-                                              np.fromstring(instance.lbpHist, dtype=np.float32))
+                    = self.chi2_distance(np.fromstring(self.q.lbpHist, dtype=np.float64),
+                                         np.fromstring(instance.lbpHist, dtype=np.float64))
                 self.check_duplicate(self.q, instance)
 
         return matches
