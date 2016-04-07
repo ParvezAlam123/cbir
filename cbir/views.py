@@ -74,7 +74,7 @@ def colour_extractor(image):
     for mask in splitImage(hsvimg):
         features.append(clrHistogram(hsvimg, mask, [8, 12, 3]))
 
-    return np.dot(np.array(weights), np.array(features))
+    return np.dot(np.array(weights, dtype=np.float32), np.array(features, dtype=np.float32))
 
 
 def texture_extractor(image):
