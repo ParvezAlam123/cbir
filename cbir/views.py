@@ -114,31 +114,10 @@ def get_results(query):
 
 # create normalize and flatten a color histogram
 def clrHistogram(image, mask, bins):
-    hist = cv2.calcHist([image], [0, 1, 2], mask, bins, [0, 256, 0, 256, 0, 256])
-    # TODO: does this need to be collapsed into one dimension? cv2.NormalizeHist(hist, 1)
-    hist = cv2.normalize(hist, hist).flatten()
+    hist = cv2.calcHist([image], [0, 1, 2], mask, bins, [0, 180, 0, 256, 0, 256])
+    cv2.normalize(hist, hist)
 
-    return hist
-
-
-def chi2_distance(histA, histB, eps=1e-10):
-
-    # temp3 = [item for item in histA if item not in histB]
-    # d = {}
-    # count = 1
-    # for item in histA:
-    #     if item not in histB:
-    #         d[count] = type(item)
-    #     count += 1
-    #
-    # pdb(d)
-
-    # pdb(np.allclose(histA, histB))
-
-    # compute the chi-squared distance
-    d = 0.5 * np.sum([((a - b) ** 2) / (a + b + eps) for (a, b) in zip(histA, histB)])
-
-    return d
+    return hist.flatten()
 
 
 # converts string to numpy array (matrix). MUST CAST to float32 otherwise pythons float64 by default, this will not
