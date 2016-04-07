@@ -64,17 +64,17 @@ def process_image(pic):
 
     pic.save()
 
-    return searcher(Image.objects.get(file=pic.file))
+    return get_results(Image.objects.get(file=pic.file))
 
 
 def colour_extractor(image):
     features = []
-
+    weights = [0.4, 0.15, 0.15, 0.15, 0.15]
     hsvimg = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     for mask in splitImage(hsvimg):
-        features.extend(clrHistogram(hsvimg, mask, [18, 3, 3]))
+        features.append(clrHistogram(hsvimg, mask, [8, 12, 3]))
 
-    return np.array(features)
+    return np.dot(np.array(weights), np.array(features))
 
 
 def texture_extractor(image):
