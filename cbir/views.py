@@ -185,8 +185,9 @@ def reload(request):
 
     for instance in Image.objects.all():
         img = cv2.imread(instance.file.path)
-        gimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        instance.texture = texture_extractor(gimg).tostring()
+        # gimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        # instance.texture = texture_extractor(gimg).tostring()
+        instance.hsvHist = colour_extractor(img).tostring()
         instance.save()
         arr.append(str(instance.file) + ' :: reprocessed<br>')
 
