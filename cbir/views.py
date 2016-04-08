@@ -59,7 +59,7 @@ def process_image(pic):
     pic.texture = texture_extractor(img).tostring()
 
     gimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    lbp = LocalBinaryPatterns(24, 8)
+    lbp = LocalBinaryPatterns(20, 1)
     pic.lbpHist = lbp.describe(gimg).tostring()
 
     pic.save()
@@ -94,7 +94,7 @@ def texture_extractor(image):
 def get_results(query):
     # construct dictionary of image path : distance
     s = Searcher(query, [0.4, 0.6])
-    matches = s.texture()
+    matches = s.lbpatterns()
 
     dict_sorted = sorted([(v, k) for (k, v) in matches.items()])
 
@@ -159,9 +159,10 @@ def reload(request):
 
     for instance in Image.objects.all():
         img = cv2.imread(instance.file.path)
-        # gimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # instance.texture = texture_extractor(gimg).tostring()
-        instance.hsvHist = colour_extractor(img).tostring()
+        grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        lbp = LocalBinaryPatterns(20, 1)
+        instance.texture = lbp.describe(grey).tostring()
+        # instance.hsvHist = colour_extractor(img).tostring()
         instance.save()
         arr.append(str(instance.file) + ' :: reprocessed<br>')
 
@@ -170,7 +171,7 @@ def reload(request):
 
 # trains a classifier and saves it in binary to the db
 def train():
-    lbp = LocalBinaryPatterns(24, 8)
+    lbp = LocalBinaryPatterns(20, 1)
     y = []  # list of responses
     x = []  # list of features
 
