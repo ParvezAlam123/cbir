@@ -7,10 +7,12 @@ class Searcher:
         self.q = query
         self.w = weights
 
-    def euclidean_distance(self, a, b):
+    @staticmethod
+    def euclidean_distance(a, b):
         return np.linalg.norm(a-b)
 
-    def chi2_distance(self, histA, histB, eps=1e-10):
+    @staticmethod
+    def chi2_distance(histA, histB, eps=1e-10):
         return 0.5 * np.sum([((a - b) ** 2) / (a + b + eps) for (a, b) in zip(histA, histB)])
 
     def colour(self):
@@ -59,7 +61,8 @@ class Searcher:
 
         return matches
 
-    def check_duplicate(self, query, instance):
+    @staticmethod
+    def check_duplicate(query, instance):
         if np.allclose(np.fromstring(query.bgrHist, dtype=np.float32),
                        np.fromstring(instance.bgrHist, dtype=np.float32)):
             Image.objects.filter(id=query.id).delete()
