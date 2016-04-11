@@ -3,9 +3,8 @@ from cbir.models import Image
 
 
 class Searcher:
-    def __init__(self, query, weights):
+    def __init__(self, query):
         self.q = query
-        self.w = weights
 
     @staticmethod
     def euclidean_distance(a, b):
@@ -43,20 +42,6 @@ class Searcher:
                 matches[str(instance)] \
                     = self.chi2_distance(np.fromstring(self.q.lbpHist, dtype=np.float64),
                                          np.fromstring(instance.lbpHist, dtype=np.float64))
-                self.check_duplicate(self.q, instance)
-
-        return matches
-
-    def colour_texture(self):
-        matches = {}
-        for instance in Image.objects.all():
-            if str(instance) != str(self.q.file) and (instance.texture and instance.hsvHist) is not None:
-                colour = self.chi2_distance(np.fromstring(self.q.hsvHist, dtype=np.float32),
-                                            np.fromstring(instance.hsvHist, dtype=np.float32))
-                texture = self.euclidean_distance(np.fromstring(self.q.texture, dtype=np.float32),
-                                                  np.fromstring(instance.texture, dtype=np.float32))
-                x = [colour, texture]
-                matches[str(instance)] = np.dot(self.w, x)
                 self.check_duplicate(self.q, instance)
 
         return matches
