@@ -8,7 +8,7 @@ from django.http import HttpResponse
 from django.http import HttpResponseBadRequest
 from django.conf import settings
 from sklearn.svm import LinearSVC
-from sklearn.preprocessing import normalize
+from sklearn import preprocessing
 from skimage.feature import greycomatrix, greycoprops
 from cbir.cvclasses.localbinarypatterns import LocalBinaryPatterns
 from cbir.cvclasses.searcher import Searcher
@@ -78,23 +78,31 @@ def colour_extractor(image):
 
 
 def texture_extractor(image):
-    props = ['dissimilarity', 'correlation', 'ASM']
+    props = ['ASM', 'contrast', 'correlation']
     features = []
-    gimg = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    glcm = greycomatrix(gimg, [5], [0, 90, 45, 135], 256, symmetric=True, normed=True)
+    grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    g = greycomatrix(grey, [2], [0, 90, 45, 135], 256, symmetric=True, normed=True)
     for p in props:
-        features.append(greycoprops(glcm, p).flatten())
+        v = greycoprops(g, p)
+        var = np.var(v)
+        u = np.mean(v)
+        r = np.ptp(v)
+        sd = np.std(v)
+        features.append([u, r, sd, var])
 
     features = np.array(features)
 
     return features.flatten()
 
 
-# search bgrHist field and return 3 best matches
+# get results sorted by similarity
 def get_results(query):
     # construct dictionary of image path : distance
-    s = Searcher(query, [0.4, 0.6])
-    matches = s.lbpatterns()
+    s = Searcher(query)
+    weights = [.5,.5]
+    colour = s.colour()
+    texture = s.lbpatterns()
+    matches = combine(colour, texture, weights)
 
     dict_sorted = sorted([(v, k) for (k, v) in matches.items()])
 
@@ -105,6 +113,36 @@ def get_results(query):
     # print(prediction)
 
     return dict_sorted[:8]
+
+
+def combine(a, b, w):
+    matches = {}
+
+    # split dictionaries into keys and values
+    al = [x for x in a.items()]
+    ak, av = zip(*al)
+    bl = [x for x in b.items()]
+    bk, bv = zip(*bl)
+
+    # scale the values in the range 0-1
+    a_scaled = preprocessing.minmax_scale(av, feature_range=(0,1))
+    b_scaled = preprocessing.minmax_scale(bv, feature_range=(0,1))
+
+    # build numpy structured arrays combining scaled values and original keys
+    names = ['keys', 'values']
+    formats = ['S225', 'f8']
+    dtype = dict(names=names, formats=formats)
+    anp = np.array(list(zip(ak,a_scaled)), dtype=dtype)
+    bnp = np.array(list(zip(bk,b_scaled)), dtype=dtype)
+
+    # iterate over numpy structures creating a weighted average between values with the same key
+    for i, t1 in np.ndenumerate(anp):
+        for j, t2 in np.ndenumerate(bnp):
+            if anp['keys'][i] == bnp['keys'][j]:
+                stack = np.vstack((anp['values'][i], bnp['values'][j]))
+                matches[anp['keys'][i].decode("utf-8")] = np.average(stack, axis=0, weights=w)[0]   # python dictionary
+
+    return matches
 
 
 # create normalize and flatten a color histogram
