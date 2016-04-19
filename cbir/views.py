@@ -1,13 +1,9 @@
-import os
 import cv2
 import json
-import pickle
 import numpy as np
 from django.shortcuts import render
 from django.http import HttpResponse
 from django.http import HttpResponseBadRequest
-from django.conf import settings
-from sklearn.svm import LinearSVC
 from sklearn import preprocessing
 from skimage.feature import greycomatrix, greycoprops
 from cbir.cvclasses.localbinarypatterns import LocalBinaryPatterns
@@ -15,8 +11,6 @@ from cbir.cvclasses.searcher import Searcher
 
 from .forms import ImageForm
 from .models import Image
-from .models import Example
-from .models import Classifier
 
 
 # Create your views here.
@@ -153,15 +147,6 @@ def clrHistogram(image, mask, bins):
     return hist.flatten()
 
 
-# converts string to numpy array (matrix). MUST CAST to float32 otherwise pythons float64 by default, this will not
-# match with our query array even if they are the same image!!!
-def toMatrix(text):
-    text = text.replace('[', '').replace(']', '')
-    floats = [np.float32(x) for x in text.split(',')]
-
-    return floats
-
-
 # split the given image into 5 sections top-left, top-right, center, bottom-left, bottom-right & return the masks
 def splitImage(image):
     masks = []
@@ -205,35 +190,6 @@ def reload(request):
         arr.append(str(instance.file) + ' :: reprocessed<br>')
 
     return HttpResponse(arr)
-
-
-# trains a classifier and saves it in binary to the db
-def train():
-    lbp = LocalBinaryPatterns(20, 1)
-    y = []  # list of responses
-    x = []  # list of features
-
-    training_dir = settings.MEDIA_ROOT + "\\images\\training"
-    img_list = os.listdir(training_dir)
-
-    for filename in img_list:
-        # load image, convert to grey-scale and describe it using lbp
-        img = cv2.imread(training_dir + "\\" + filename)
-        grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        hist = lbp.describe(grey)
-
-        # extract label from the image path
-        y.append(filename.split("_")[-2])   # label
-        x.append(hist)                      # vector
-        Example(file=filename, lbpHist=hist.tostring(), label=filename.split("_")[-2]).save()
-
-    model = LinearSVC(C=100.0, random_state=42)
-    model.fit(x, y)     # train linear support vector machine
-    Classifier(model=pickle.dumps(model)).save()
-
-    # pdb(Classifier.objects.get(id=1))
-
-    return
 
 
 # debug variable
