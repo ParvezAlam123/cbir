@@ -49,42 +49,58 @@ def process_image(pic):
     # extract features & save to db
     pic.bgrHist = bgrHist.tostring()
     pic.hsvHist = colour_extractor(img).tostring()
-
-    pic.texture = texture_extractor(img).tostring()
-
-    gimg = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    lbp = LocalBinaryPatterns(20, 1)
-    pic.lbpHist = lbp.describe(gimg).tostring()
+    pic.texture = htf_extractor(img).tostring()
+    pic.lbpHist = lbp_extractor(img, 28, 3).tostring()
 
     pic.save()
 
     return get_results(Image.objects.get(file=pic.file))
 
 
+def global_colour(image):
+    hsvimg = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    return clrHistogram(hsvimg, None, [8, 12, 3])
+
+
 def colour_extractor(image):
     features = []
-    weights = [0.4, 0.15, 0.15, 0.15, 0.15]
+    weights = [0.5, 0.1, 0.1, 0.15, 0.15]
     hsvimg = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
     for mask in splitImage(hsvimg):
         features.append(clrHistogram(hsvimg, mask, [8, 12, 3]))
 
-    return np.dot(np.array(weights, dtype=np.float32), np.array(features, dtype=np.float32))
+    return np.dot(np.array(weights, dtype=np.float64), np.array(features, dtype=np.float64))
 
 
-def texture_extractor(image):
-    props = ['ASM', 'contrast', 'correlation']
+def lbp_extractor(image, precision, radius):
+    gimg = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    lbp = LocalBinaryPatterns(precision, radius)
+    return lbp.describe(gimg)
+
+
+def htf_extractor(image):
+    props = ['contrast']
     features = []
     grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    g = greycomatrix(grey, [2], [0, 90, 45, 135], 256, symmetric=True, normed=True)
+    g = greycomatrix(grey, [1], [0, 90, 45, 135], 256, symmetric=True, normed=True)
     for p in props:
-        v = greycoprops(g, p)
-        var = np.var(v)
-        u = np.mean(v)
-        r = np.ptp(v)
-        sd = np.std(v)
-        features.append([u, r, sd, var])
+        if p == 'entropy':
+            entropy = np.apply_over_axes(np.sum, g * (-np.log1p(g)), axes=(0, 1))[0, 0]
+            eu = np.mean(entropy)
+            er = np.ptp(entropy)
+            features.append([eu, er])
+        else:
+            gp = greycoprops(g, p)
+            u = np.mean(gp)
+            r = np.ptp(gp)
+            features.append([u, r])
 
-    features = np.array(features)
+    features = np.array(features, dtype=np.float64)
+
+    if len(props) != 1:
+        for (x, y), value in np.ndenumerate(features):
+            features[x, y] = (value - np.mean(features[:,y]))/np.std(features[:,y])
 
     return features.flatten()
 
