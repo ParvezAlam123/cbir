@@ -92,24 +92,19 @@ def texture_extractor(image):
 # get results sorted by similarity
 def get_results(query):
     # construct dictionary of image path : distance
+    w = [.4,.5,.1]
     s = Searcher(query)
-    weights = [.5,.5]
-    colour = s.colour()
-    texture = s.lbpatterns()
-    matches = combine(colour, texture, weights)
+    c = s.colour()
+    t = s.lbpatterns()
+    h = s.texture()
+    matches = combine(c, t, h, w)
 
     dict_sorted = sorted([(v, k) for (k, v) in matches.items()])
-
-    # svm = Classifier.objects.get(id=1).model
-    # model = pickle.loads(svm)
-    # pattern = np.fromstring(query.lbpHist, dtype=np.float32)
-    # prediction = model.predict(pattern)[0]
-    # print(prediction)
 
     return dict_sorted[:8]
 
 
-def combine(a, b, w):
+def combine(a, b, c, w):
     matches = {}
 
     # split dictionaries into keys and values
@@ -117,10 +112,13 @@ def combine(a, b, w):
     ak, av = zip(*al)
     bl = [x for x in b.items()]
     bk, bv = zip(*bl)
+    cl = [x for x in c.items()]
+    ck, cv = zip(*cl)
 
     # scale the values in the range 0-1
-    a_scaled = preprocessing.minmax_scale(av, feature_range=(0,1))
-    b_scaled = preprocessing.minmax_scale(bv, feature_range=(0,1))
+    a_scaled = preprocessing.minmax_scale(av, feature_range=(0, 1))
+    b_scaled = preprocessing.minmax_scale(bv, feature_range=(0, 1))
+    c_scaled = preprocessing.minmax_scale(cv, feature_range=(0, 1))
 
     # build numpy structured arrays combining scaled values and original keys
     names = ['keys', 'values']
@@ -128,13 +126,19 @@ def combine(a, b, w):
     dtype = dict(names=names, formats=formats)
     anp = np.array(list(zip(ak,a_scaled)), dtype=dtype)
     bnp = np.array(list(zip(bk,b_scaled)), dtype=dtype)
+    cnp = np.array(list(zip(ck,c_scaled)), dtype=dtype)
 
     # iterate over numpy structures creating a weighted average between values with the same key
     for i, t1 in np.ndenumerate(anp):
         for j, t2 in np.ndenumerate(bnp):
             if anp['keys'][i] == bnp['keys'][j]:
-                stack = np.vstack((anp['values'][i], bnp['values'][j]))
-                matches[anp['keys'][i].decode("utf-8")] = np.average(stack, axis=0, weights=w)[0]   # python dictionary
+                for k, t3 in np.ndenumerate(cnp):
+                    if anp['keys'][i] == cnp['keys'][k]:
+                        stack = np.vstack((anp['values'][i], bnp['values'][j]))
+                        stack = np.vstack((stack, cnp['values'][k]))
+                        matches[anp['keys'][i].decode("utf-8")] = np.average(stack, axis=0, weights=w)[0]
+                        break
+                break
 
     return matches
 
