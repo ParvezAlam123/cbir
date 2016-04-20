@@ -8,6 +8,7 @@ class LocalBinaryPatterns:
         self.radius = radius
 
     def describe(self, image, eps=1e-7):
+        # compute the rotation and grey-scale invariant form of LBPs (uniform)
         lbp = feature.local_binary_pattern(image, self.points, self.radius, method="uniform")
 
         (hist, _) = np.histogram(lbp.ravel(), bins=np.arange(0, self.points + 2), range=(0, self.points + 1))

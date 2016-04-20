@@ -1,20 +1,16 @@
-import os
 import cv2
 import json
-import pickle
 import numpy as np
 from django.shortcuts import render
 from django.http import HttpResponse
 from django.http import HttpResponseBadRequest
-from django.conf import settings
-from sklearn.svm import LinearSVC
+from sklearn import preprocessing
 from skimage.feature import greycomatrix, greycoprops
 from cbir.cvclasses.localbinarypatterns import LocalBinaryPatterns
+from cbir.cvclasses.searcher import Searcher
 
 from .forms import ImageForm
 from .models import Image
-from .models import Example
-from .models import Classifier
 
 
 # Create your views here.
@@ -35,11 +31,9 @@ def upload_image(request):
     if form.is_valid():
         pic = Image(file=request.FILES['file'])
 
-        # train()
-
         pic.save()              # save image first so we can retrieve the file path
 
-        data = process_image(pic)      # process the image; generate histograms etc
+        data = process_image(pic)      # process the image; extract features
 
         return HttpResponse(json.dumps(data), content_type="application/json")
 
@@ -48,109 +42,129 @@ def upload_image(request):
 
 # extract features from query image
 def process_image(pic):
-
-    lbp = LocalBinaryPatterns(24, 8)
-    clgfeatures = []
-
     img = cv2.imread(pic.file.path)
-    hsvimg = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    # extract a 3D RGB & HSV color histogram from the image using 8 bins per channel
-    pic.bgrHist = clrHistogram(img, None, [8, 8, 8])
+    bgrHist = clrHistogram(img, None, [8, 8, 8])
 
-    for mask in splitImage(hsvimg):
-        clgfeatures.extend(clrHistogram(hsvimg, mask, [18, 3, 3]))
+    # extract features & save to db
+    pic.bgrHist = bgrHist.tostring()
+    pic.hsvHist = colour_extractor(img).tostring()
+    pic.texture = htf_extractor(img).tostring()
+    pic.lbpHist = lbp_extractor(img, 28, 3).tostring()
 
-    glcmfeatures = calcGLCM(grey)
-
-    pic.lbpHist = lbp.describe(grey).tostring()
-    pic.hsvHist = clgfeatures  # note that some data/precision is lost in the conversion float > string > float
-    pic.dissimilarity = json.dumps(glcmfeatures['fdiss'])
-    pic.correlation = json.dumps(glcmfeatures['fcorr'])
     pic.save()
 
-    return searcher(pic)
+    return get_results(Image.objects.get(file=pic.file))
 
 
-# search bgrHist field and return 3 best matches
-def searcher(pic):
+def global_colour(image):
+    hsvimg = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+
+    return clrHistogram(hsvimg, None, [8, 12, 3])
+
+
+def colour_extractor(image):
+    features = []
+    weights = [0.5, 0.1, 0.1, 0.15, 0.15]
+    hsvimg = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    for mask in splitImage(hsvimg):
+        features.append(clrHistogram(hsvimg, mask, [8, 12, 3]))
+
+    return np.dot(np.array(weights, dtype=np.float64), np.array(features, dtype=np.float64))
+
+
+def lbp_extractor(image, precision, radius):
+    gimg = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    lbp = LocalBinaryPatterns(precision, radius)
+    return lbp.describe(gimg)
+
+
+def htf_extractor(image):
+    props = ['contrast']
+    features = []
+    grey = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    g = greycomatrix(grey, [1], [0, 90, 45, 135], 256, symmetric=True, normed=True)
+    for p in props:
+        if p == 'entropy':
+            entropy = np.apply_over_axes(np.sum, g * (-np.log1p(g)), axes=(0, 1))[0, 0]
+            eu = np.mean(entropy)
+            er = np.ptp(entropy)
+            features.append([eu, er])
+        else:
+            gp = greycoprops(g, p)
+            u = np.mean(gp)
+            r = np.ptp(gp)
+            features.append([u, r])
+
+    features = np.array(features, dtype=np.float64)
+
+    if len(props) != 1:
+        for (x, y), value in np.ndenumerate(features):
+            features[x, y] = (value - np.mean(features[:,y]))/np.std(features[:,y])
+
+    return features.flatten()
+
+
+# get results sorted by similarity
+def get_results(query):
     # construct dictionary of image path : distance
-    matches = {}
-    query = Image.objects.get(file=pic.file)
-    w = [0.4, 0.6]
-
-    for instance in Image.objects.all():
-        if str(instance) != str(pic.file) and (instance.hsvHist and instance.dissimilarity and instance.correlation) is not None:
-            texture1 = json.loads(query.dissimilarity) + json.loads(query.correlation)
-            texture2 = json.loads(instance.dissimilarity) + json.loads(instance.correlation)
-            x = [
-                chi2_distance(toMatrix(query.hsvHist), toMatrix(instance.hsvHist)),
-                chi2_distance(texture1, texture2)
-            ]
-
-            matches[str(instance)] = np.dot(w, x)
+    w = [.4,.5,.1]
+    s = Searcher(query)
+    c = s.colour()
+    t = s.lbpatterns()
+    h = s.texture()
+    matches = combine(c, t, h, w)
 
     dict_sorted = sorted([(v, k) for (k, v) in matches.items()])
 
-    # svm = Classifier.objects.get(id=1).model
-    # model = pickle.loads(svm)
-    # pattern = np.fromstring(query.lbpHist)
-    # prediction = model.predict(pattern)[0]
-    # print(prediction)
-
-    return dict_sorted[:3]
+    return dict_sorted[:8]
 
 
-def calcGLCM(image):
-    fdiss = []
-    fcorr = []
+def combine(a, b, c, w):
+    matches = {}
 
-    for mask in splitImage(image):
-        glcm = greycomatrix(mask, [5], [0], 256, symmetric=True, normed=True)
-        fdiss.append(greycoprops(glcm, 'dissimilarity')[0, 0])
-        fcorr.append(greycoprops(glcm, 'correlation')[0, 0])
+    # split dictionaries into keys and values
+    al = [x for x in a.items()]
+    ak, av = zip(*al)
+    bl = [x for x in b.items()]
+    bk, bv = zip(*bl)
+    cl = [x for x in c.items()]
+    ck, cv = zip(*cl)
 
-    features = {'fdiss': fdiss, 'fcorr': fcorr}
+    # scale the values in the range 0-1
+    a_scaled = preprocessing.minmax_scale(av, feature_range=(0, 1))
+    b_scaled = preprocessing.minmax_scale(bv, feature_range=(0, 1))
+    c_scaled = preprocessing.minmax_scale(cv, feature_range=(0, 1))
 
-    return features
+    # build numpy structured arrays combining scaled values and original keys
+    names = ['keys', 'values']
+    formats = ['S225', 'f8']
+    dtype = dict(names=names, formats=formats)
+    anp = np.array(list(zip(ak,a_scaled)), dtype=dtype)
+    bnp = np.array(list(zip(bk,b_scaled)), dtype=dtype)
+    cnp = np.array(list(zip(ck,c_scaled)), dtype=dtype)
+
+    # iterate over numpy structures creating a weighted average between values with the same key
+    for i, t1 in np.ndenumerate(anp):
+        for j, t2 in np.ndenumerate(bnp):
+            if anp['keys'][i] == bnp['keys'][j]:
+                for k, t3 in np.ndenumerate(cnp):
+                    if anp['keys'][i] == cnp['keys'][k]:
+                        stack = np.vstack((anp['values'][i], bnp['values'][j]))
+                        stack = np.vstack((stack, cnp['values'][k]))
+                        matches[anp['keys'][i].decode("utf-8")] = np.average(stack, axis=0, weights=w)[0]
+                        break
+                break
+
+    return matches
 
 
 # create normalize and flatten a color histogram
 def clrHistogram(image, mask, bins):
-    hist = cv2.calcHist([image], [0, 1, 2], mask, bins, [0, 256, 0, 256, 0, 256])
-    hist = cv2.normalize(hist, hist).flatten()
+    hist = cv2.calcHist([image], [0, 1, 2], mask, bins, [0, 180, 0, 256, 0, 256])
+    cv2.normalize(hist, hist)
 
-    return hist
-
-
-def chi2_distance(histA, histB, eps=1e-10):
-
-    # temp3 = [item for item in histA if item not in histB]
-    # d = {}
-    # count = 1
-    # for item in histA:
-    #     if item not in histB:
-    #         d[count] = type(item)
-    #     count += 1
-    #
-    # pdb(d)
-
-    # pdb(np.allclose(histA, histB))
-
-    # compute the chi-squared distance
-    d = 0.5 * np.sum([((a - b) ** 2) / (a + b + eps) for (a, b) in zip(histA, histB)])
-
-    return d
-
-
-# converts string to numpy array (matrix). MUST CAST to float32 otherwise pythons float64 by default, this will not
-# match with our query array even if they are the same image!!!
-def toMatrix(text):
-    text = text.replace('[', '').replace(']', '')
-    floats = [np.float32(x) for x in text.split(',')]
-
-    return floats
+    return hist.flatten()
 
 
 # split the given image into 5 sections top-left, top-right, center, bottom-left, bottom-right & return the masks
@@ -183,33 +197,19 @@ def splitImage(image):
     return masks
 
 
-# trains a classifier and saves it in binary to the db
-def train():
-    lbp = LocalBinaryPatterns(24, 8)
-    y = []  # list of responses
-    x = []  # list of features
+def reload(request):
+    arr = []
 
-    training_dir = settings.MEDIA_ROOT + "\\images\\training"
-    img_list = os.listdir(training_dir)
-
-    for filename in img_list:
-        # load image, convert to grey-scale and describe it using lbp
-        img = cv2.imread(training_dir + "\\" + filename)
+    for instance in Image.objects.all():
+        img = cv2.imread(instance.file.path)
         grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        hist = lbp.describe(grey)
+        lbp = LocalBinaryPatterns(20, 1)
+        instance.texture = lbp.describe(grey).tostring()
+        # instance.hsvHist = colour_extractor(img).tostring()
+        instance.save()
+        arr.append(str(instance.file) + ' :: reprocessed<br>')
 
-        # extract label from the image path
-        y.append(filename.split("_")[-2])   # label
-        x.append(hist)                      # vector
-        Example(file=filename, lbpHist=hist.tostring(), label=filename.split("_")[-2]).save()
-
-    model = LinearSVC(C=100.0, random_state=42)
-    model.fit(x, y)     # train linear support vector machine
-    Classifier(model=pickle.dumps(model)).save()
-
-    # pdb(Classifier.objects.get(id=1))
-
-    return
+    return HttpResponse(arr)
 
 
 # debug variable

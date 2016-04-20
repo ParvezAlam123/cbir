@@ -9,3 +9,7 @@
     font-weight: 500;
     font-size: 30px;
 }
+
+.results img {
+    max-height: 155px;
+}
